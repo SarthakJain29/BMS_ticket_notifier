@@ -1,0 +1,43 @@
+name: Check tickets
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 minutes (GitHub may delay runs)
+    - cron: "30 3 * * *" # 09:00 IST daily heartbeat
+  workflow_dispatch: # manual run, also sends a heartbeat
+
+permissions:
+  contents: write # to commit state.json
+
+concurrency:
+  group: check-tickets
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Check BookMyShow
+        run: python -m notifier
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          HEARTBEAT: ${{ github.event.schedule == '30 3 * * *' || github.event_name == 'workflow_dispatch' }}
+
+      - name: Commit state
+        run: |
+          git add state.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update state"
+          git pull --rebase
+          git push
