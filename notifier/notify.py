@@ -4,7 +4,7 @@ import os
 
 from curl_cffi import requests
 
-URGENT, HIGH, DEFAULT = 5, 4, 3
+URGENT, DEFAULT = 5, 3
 
 
 def push(title: str, message: str, priority: int = DEFAULT, click: str | None = None, tags: list[str] | None = None) -> None:
