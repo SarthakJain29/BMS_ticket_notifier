@@ -2,43 +2,51 @@
 
 Checks BookMyShow every 10 minutes and sends a push notification to your phone when new shows open at the theatres you care about.
 
-Currently watching **Avengers Endgame: Encore** (all English formats) in Hyderabad at Prasads Multiplex, ALLU Cinemas Kokapet and AMB Cinemas Gachibowli, for 25–28 Sep.
+Currently watching **Avengers Endgame: Encore** (all English formats) in Hyderabad at Prasads Multiplex, ALLU Cinemas Kokapet, AMB Cinemas Gachibowli and PVR Superplex Inorbit, for 25–28 Sep.
 
 ## How it works
 
-1. A GitHub Actions cron runs `python -m notifier`.
-2. For each date, it calls BookMyShow's showtimes API once with `etCodes=*`, which returns every format of the movie.
+1. [cron-job.org](https://cron-job.org) calls GitHub's API every 10 minutes to start the **Check tickets** workflow. GitHub's own schedule stays as a backup, since it often skips runs.
+2. The workflow runs `python -m notifier`. For each date it calls BookMyShow's showtimes API once with `etCodes=*`, which returns every format.
 3. It keeps shows at the watched venue codes and compares them with `state.json`.
 4. New shows trigger an urgent [ntfy](https://ntfy.sh) push that opens the theatre's booking page.
 5. `state.json` is committed back only when it changes.
+6. Each fully successful check pings [healthchecks.io](https://healthchecks.io), which alerts you if checks stop or keep failing.
 
 Other notifications:
-- **First run:** "Watching" push with the shows already open (they won't alert again).
-- **Failures:** one alert if fetching keeps failing for 30 minutes, and another when it recovers.
-- **Heartbeat:** daily at 09:00 IST, and on every manual run.
+- **Newly added theatre (and the first run):** a "Now watching" push with the shows already open. Those shows won't alert again.
+- **Heartbeat:** daily at 09:00 IST, or on a manual run with **Send a 💚 status push** ticked.
 
 ## Setup
 
-1. Install the **ntfy** app and subscribe to a hard-to-guess topic name.
-2. Add that topic as the `NTFY_TOPIC` repository secret (Settings → Secrets and variables → Actions).
-3. Run the workflow once from the Actions tab. You should get the "Watching" push.
+1. **ntfy:** install the app and subscribe to a hard-to-guess topic.
+2. **Repository secrets** (Settings → Secrets and variables → Actions):
+   - `NTFY_TOPIC`: the topic name
+   - `HEALTHCHECK_URL`: the check's ping URL from healthchecks.io
+3. **healthchecks.io:** create a check with period 10 minutes and grace 20 minutes, and add the ntfy integration.
+4. **cron-job.org:** every 10 minutes, `POST` to `https://api.github.com/repos/<owner>/<repo>/actions/workflows/check.yml/dispatches` with:
+   - Body: `{"ref":"main"}`
+   - Headers:
+     - `Authorization: Bearer <token>`: a fine-grained token with **Actions: read and write** on this repo only
+     - `Accept: application/vnd.github+json`
+     - `X-GitHub-Api-Version: 2022-11-28`
 
 ## Configuration
 
 Edit [`notifier/config.py`](notifier/config.py): event code, language, region, dates and venue codes.
 
-Venue codes appear in BookMyShow theatre URLs, e.g. `.../cinemas/hyderabad/prasads-multiplex-hyderabad/buytickets/PRHN/...` → `PRHN`.
-
-After changing theatres or the movie, delete `state.json` so the next run takes a fresh baseline.
+Venue codes appear in BookMyShow theatre URLs, e.g. `.../cinemas/hyderabad/prasads-multiplex-hyderabad/buytickets/PRHN/...` → `PRHN`. New theatres are baselined automatically. When switching to another movie, delete `state.json`.
 
 ## Run locally
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m notifier                      # prints instead of pushing
+.venv/bin/python -m notifier                        # prints instead of pushing
 NTFY_TOPIC=your-topic .venv/bin/python -m notifier  # real pushes
 ```
 
 ## Stop
 
-Actions tab → **Check tickets** → **⋯** → **Disable workflow**.
+1. Disable the cron-job.org job.
+2. Actions tab → **Check tickets** → **⋯** → **Disable workflow**.
+3. Pause the check on healthchecks.io.
