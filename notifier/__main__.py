@@ -1,43 +1,46 @@
 """Entry point: python -m notifier. Runs one check and exits."""
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 
-from . import bms, config, notify
+from . import bms, config, healthcheck, notify
 from .state import State, load, save
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def main() -> None:
-    now = datetime.now(IST)
+    now = datetime.now(IST).isoformat(timespec="seconds")
     shows, errors = fetch_watched_shows()
     for error in errors:
         print(f"Fetch failed: {error}")
     print(f"{len(shows)} shows at watched theatres, {len(errors)} failed dates")
 
     state = load(config.STATE_FILE)
-    if state is None:
-        if errors:
-            sys.exit("First run failed to fetch every date; not saving a partial baseline.")
-        state = State()
-        record(state, shows, now)
-        notify.push("👀 Watching for new shows", status_text(state), click=shows[0].url if shows else None)
-        save(state, config.STATE_FILE)
-        return
 
-    new_shows = [show for show in shows if show.key not in state.seen]
+    # Newly watched venues: record their current shows silently instead of alerting on all of them.
+    # Skipped while any fetch fails, so a partial list can't cause false alerts later.
+    new_venues = [code for code in config.VENUES if code not in state.venues]
+    if new_venues and not errors:
+        existing = [s for s in shows if s.venue_code in new_venues]
+        record(state, existing, now)
+        state.venues += new_venues
+        notify.push("👀 Now watching", venue_counts_text(new_venues, [s.key for s in existing]))
+
+    new_shows = [s for s in shows if s.venue_code in state.venues and s.key not in state.seen]
     if new_shows:
         alert_new_shows(new_shows)
         record(state, new_shows, now)
 
-    track_failures(state, errors, now)
-
     if os.environ.get("HEARTBEAT") == "true":
-        notify.push("💚 Notifier running", status_text(state, errors))
+        status = venue_counts_text(state.venues, state.seen)
+        notify.push("💚 Notifier running", f"{status}\nLast check: {'failing' if errors else 'OK'}")
 
     save(state, config.STATE_FILE)
+
+    # Only fully successful checks ping; healthchecks.io alerts when pings stop
+    if not errors:
+        healthcheck.ping()
 
 
 def fetch_watched_shows() -> tuple[list[bms.Show], list[str]]:
@@ -50,9 +53,9 @@ def fetch_watched_shows() -> tuple[list[bms.Show], list[str]]:
     return shows, errors
 
 
-def record(state: State, shows: list[bms.Show], now: datetime) -> None:
+def record(state: State, shows: list[bms.Show], now: str) -> None:
     for show in shows:
-        state.seen[show.key] = now.isoformat(timespec="seconds")
+        state.seen[show.key] = now
 
 
 def alert_new_shows(shows: list[bms.Show]) -> None:
@@ -71,31 +74,11 @@ def alert_new_shows(shows: list[bms.Show]) -> None:
     notify.push(title, "\n".join(lines), priority=notify.URGENT, click=shows[0].url, tags=["tickets"])
 
 
-def track_failures(state: State, errors: list[str], now: datetime) -> None:
-    if not errors:
-        if state.failure_alerted:
-            notify.push("✅ Notifier recovered", "Fetching from BookMyShow works again.")
-        state.failing_since, state.failure_alerted = None, False
-        return
-
-    if state.failing_since is None:
-        state.failing_since = now.isoformat(timespec="seconds")
-    failing_for = now - datetime.fromisoformat(state.failing_since)
-    if not state.failure_alerted and failing_for >= timedelta(minutes=config.FAILURE_ALERT_AFTER_MINUTES):
-        minutes = int(failing_for.total_seconds() // 60)
-        notify.push(f"⚠️ Notifier failing for {minutes} min", "\n".join(errors), priority=notify.HIGH)
-        state.failure_alerted = True
-
-
-def status_text(state: State, errors: list[str] | None = None) -> str:
-    counts = {code: 0 for code in config.VENUES}
-    for key in state.seen:
-        code = key.split("|")[0]
-        if code in counts:
-            counts[code] += 1
-    lines = [f"{config.VENUES[code]}: {count} shows" for code, count in counts.items()]
+def venue_counts_text(venues: list[str], show_keys) -> str:
+    """Shows per venue, from show keys ("VENUE|date|session")."""
+    codes = [key.split("|")[0] for key in show_keys]
+    lines = [f"{config.VENUES[code]}: {codes.count(code)} shows" for code in venues if code in config.VENUES]
     lines.append(f"Dates: {', '.join(pretty_date(d) for d in config.DATES)}")
-    lines.append(f"Last check: {'failing' if errors else 'OK'}")
     return "\n".join(lines)
 
 

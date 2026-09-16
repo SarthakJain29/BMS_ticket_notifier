@@ -14,9 +14,7 @@ VENUES = {
     "PRHN": "Prasads Multiplex",
     "ALUC": "ALLU Cinemas Kokapet",
     "AMBH": "AMB Cinemas Gachibowli",
+    "PIIC": "PVR Superplex Inorbit",
 }
 
 STATE_FILE = "state.json"
-
-# Alert only if fetching keeps failing this long (avoids noise from one-off errors)
-FAILURE_ALERT_AFTER_MINUTES = 30
