@@ -9,7 +9,7 @@ Currently watching **Avengers Endgame: Encore** (all English formats) in Hyderab
 1. [cron-job.org](https://cron-job.org) calls GitHub's API every 10 minutes to start the **Check tickets** workflow. GitHub's own schedule stays as a backup, since it often skips runs.
 2. The workflow runs `python -m notifier`. For each date it calls BookMyShow's showtimes API once with `etCodes=*`, which returns every format.
 3. It keeps shows at the watched venue codes and compares them with `state.json`.
-4. New shows trigger an urgent [ntfy](https://ntfy.sh) push that opens the theatre's booking page.
+4. New shows trigger an urgent [ntfy](https://ntfy.sh) push that opens the theatre's booking page. MS-Infinity shows (`PRIORITY_FORMAT`) are marked ⭐, counted in the title and listed first.
 5. `state.json` is committed back only when it changes.
 6. Each fully successful check pings [healthchecks.io](https://healthchecks.io), which alerts you if checks stop or keep failing.
 

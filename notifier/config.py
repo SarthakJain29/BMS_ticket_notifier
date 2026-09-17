@@ -17,4 +17,7 @@ VENUES = {
     "PIIC": "PVR Superplex Inorbit",
 }
 
+# Shows in formats containing this (spaces ignored) are marked ⭐ and listed first in alerts
+PRIORITY_FORMAT = "MS-Infinity"
+
 STATE_FILE = "state.json"

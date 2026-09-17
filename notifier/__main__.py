@@ -59,19 +59,32 @@ def record(state: State, shows: list[bms.Show], now: str) -> None:
 
 
 def alert_new_shows(shows: list[bms.Show]) -> None:
-    shows = sorted(shows, key=lambda s: (s.venue_code, s.starts))
+    # Venues with priority shows first; within a venue, priority shows first, then by time
+    priority_venues = {s.venue_code for s in shows if is_priority(s)}
+    shows = sorted(shows, key=lambda s: (s.venue_code not in priority_venues, s.venue_code, not is_priority(s), s.starts))
     venues = {s.venue_code for s in shows}
-    title = f"🎟 {len(shows)} new show{'s' * (len(shows) > 1)} at "
-    title += config.VENUES[shows[0].venue_code] if len(venues) == 1 else f"{len(venues)} theatres"
+    priority_count = sum(map(is_priority, shows))
+
+    title = f"{len(shows)} new show{'s' * (len(shows) > 1)}"
+    if priority_count:
+        title = f"⭐ {title} ({priority_count} {config.PRIORITY_FORMAT})"
+    venue_text = config.VENUES[shows[0].venue_code] if len(venues) == 1 else f"{len(venues)} theatres"
+    title = f"🎟 {title} at {venue_text}"
 
     lines, last_venue = [], None
     for show in shows:
         if show.venue_code != last_venue:
             lines.append(config.VENUES[show.venue_code])
             last_venue = show.venue_code
-        lines.append(f"• {pretty_date(show.date)}, {show.time} · {show.format}")
+        bullet = "⭐" if is_priority(show) else "•"
+        lines.append(f"{bullet} {pretty_date(show.date)}, {show.time} · {show.format}")
 
     notify.push(title, "\n".join(lines), priority=notify.URGENT, click=shows[0].url, tags=["tickets"])
+
+
+def is_priority(show: bms.Show) -> bool:
+    normalize = lambda text: text.replace(" ", "").lower()
+    return normalize(config.PRIORITY_FORMAT) in normalize(show.format)
 
 
 def venue_counts_text(venues: list[str], show_keys) -> str:
